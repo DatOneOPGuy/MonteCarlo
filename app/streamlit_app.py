@@ -22,6 +22,7 @@ import pandas as pd
 import streamlit as st
 
 from app.core.analytics import compute_analytics
+from app.core.dcf import dcf_valuation_from_results, calculate_equity_value
 from app.core.simulate import simulate_growth_paths, simulate_with_lhs
 from app.core.types import SimConfig
 from app.core.validation import compute_parameter_hash
@@ -101,6 +102,13 @@ def main() -> None:
     # Sidebar controls
     st.sidebar.header("Simulation Configuration")
 
+    # DCF Mode toggle
+    dcf_mode = st.sidebar.checkbox(
+        "DCF Valuation Mode",
+        value=False,
+        help="Enable DCF valuation with terminal value calculation",
+    )
+
     # Number of years
     n_years = st.sidebar.number_input(
         "Number of years",
@@ -109,6 +117,78 @@ def main() -> None:
         value=2,
         help="Number of years to simulate",
     )
+
+    # DCF-specific inputs
+    if dcf_mode:
+        st.sidebar.subheader("DCF Parameters")
+        initial_fcf = st.sidebar.number_input(
+            "Initial Free Cash Flow (Year 0)",
+            min_value=0.0,
+            value=100_000_000_000.0,  # $100B default (Apple scale)
+            step=1_000_000_000.0,
+            format="%.0f",
+            help="Free cash flow in Year 0 (before projections)",
+        )
+        wacc = st.sidebar.number_input(
+            "WACC (Discount Rate)",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.0766,  # Apple's WACC from project
+            step=0.001,
+            format="%.4f",
+            help="Weighted Average Cost of Capital",
+        )
+        terminal_method = st.sidebar.radio(
+            "Terminal Value Method",
+            ["Perpetual Growth", "Terminal Multiple", "None"],
+            help="Method for calculating terminal value",
+        )
+        terminal_growth = None
+        terminal_multiple = None
+        if terminal_method == "Perpetual Growth":
+            terminal_growth = st.sidebar.number_input(
+                "Terminal Growth Rate",
+                min_value=-0.1,
+                max_value=0.1,
+                value=0.03,
+                step=0.001,
+                format="%.3f",
+                help="Perpetual growth rate (Gordon Growth Model)",
+            )
+        elif terminal_method == "Terminal Multiple":
+            terminal_multiple = st.sidebar.number_input(
+                "Terminal Multiple",
+                min_value=0.0,
+                value=15.0,
+                step=0.5,
+                help="Terminal multiple (e.g., EV/EBITDA)",
+            )
+
+        # Equity value calculation
+        st.sidebar.subheader("Equity Value (Optional)")
+        calculate_equity = st.sidebar.checkbox("Calculate Equity Value per Share", value=False)
+        if calculate_equity:
+            cash = st.sidebar.number_input(
+                "Cash & Equivalents",
+                value=0.0,
+                step=1_000_000_000.0,
+                format="%.0f",
+            )
+            debt = st.sidebar.number_input(
+                "Total Debt",
+                value=0.0,
+                step=1_000_000_000.0,
+                format="%.0f",
+            )
+            shares = st.sidebar.number_input(
+                "Shares Outstanding",
+                min_value=0.0,
+                value=1.0,
+                step=0.1,
+                format="%.2f",
+            )
+        else:
+            cash = debt = shares = 0.0
 
     # Simulation controls
     n_sims, seed, use_lhs = render_simulation_controls()
@@ -185,6 +265,16 @@ def main() -> None:
                 st.session_state["results"] = results
                 st.session_state["config"] = config
                 st.session_state["param_hash"] = param_hash
+                st.session_state["dcf_mode"] = dcf_mode
+                if dcf_mode:
+                    st.session_state["initial_fcf"] = initial_fcf
+                    st.session_state["wacc"] = wacc
+                    st.session_state["terminal_growth"] = terminal_growth
+                    st.session_state["terminal_multiple"] = terminal_multiple
+                    st.session_state["calculate_equity"] = calculate_equity
+                    st.session_state["cash"] = cash
+                    st.session_state["debt"] = debt
+                    st.session_state["shares"] = shares
                 st.success("✅ Simulation completed!")
 
             except Exception as e:
@@ -197,58 +287,151 @@ def main() -> None:
     if "results" in st.session_state:
         results = st.session_state["results"]
         config = st.session_state["config"]
+        
+        # Get DCF mode from session state if available, otherwise from current state
+        dcf_mode_active = st.session_state.get("dcf_mode", dcf_mode)
+        
+        # Initialize DCF variables with defaults
+        initial_fcf = st.session_state.get("initial_fcf", 100_000_000_000.0)
+        wacc = st.session_state.get("wacc", 0.0766)
+        terminal_growth = st.session_state.get("terminal_growth", None)
+        terminal_multiple = st.session_state.get("terminal_multiple", None)
+        calculate_equity = st.session_state.get("calculate_equity", False)
+        cash = st.session_state.get("cash", 0.0)
+        debt = st.session_state.get("debt", 0.0)
+        shares = st.session_state.get("shares", 0.0)
 
-        # Compute analytics
-        var_alphas = [0.01, 0.05, 0.10]
-        loss_threshold = st.sidebar.number_input(
-            "Loss threshold",
-            value=0.0,
-            step=0.01,
-            format="%.3f",
-            help="Threshold for probability of loss calculation",
-        )
-        target_value = st.sidebar.number_input(
-            "Target value",
-            value=None,
-            step=0.01,
-            format="%.3f",
-            help="Target value for probability calculation",
-        )
+        # DCF valuation if enabled
+        if dcf_mode_active:
+            dcf_values, dcf_analytics = dcf_valuation_from_results(
+                results,
+                initial_fcf=initial_fcf,
+                wacc=wacc,
+                terminal_growth=terminal_growth,
+                terminal_multiple=terminal_multiple,
+            )
 
-        analytics = compute_analytics(
-            results,
-            var_alphas=var_alphas,
-            loss_threshold=loss_threshold if loss_threshold != 0 else None,
-            target_value=target_value,
-            compute_sensitivity=True,
-        )
+            # Calculate equity value if requested
+            if calculate_equity and shares > 0:
+                equity_values = np.array([
+                    calculate_equity_value(dcf_val, cash, debt, shares)
+                    for dcf_val in dcf_values
+                ])
+                equity_mean = np.mean(equity_values)
+                equity_median = np.median(equity_values)
+                equity_p05 = np.percentile(equity_values, 5)
+                equity_p95 = np.percentile(equity_values, 95)
+            else:
+                equity_values = None
+                equity_mean = equity_median = equity_p05 = equity_p95 = None
 
-        # Metrics cards
-        st.header("Summary Statistics")
-        col1, col2, col3, col4, col5 = st.columns(5)
+            # Display DCF results
+            st.header("DCF Valuation Results")
+            dcf_col1, dcf_col2, dcf_col3, dcf_col4 = st.columns(4)
+            with dcf_col1:
+                st.metric("Mean DCF Value", f"${dcf_analytics['mean']/1e9:.2f}B")
+            with dcf_col2:
+                st.metric("Median DCF Value", f"${dcf_analytics['median']/1e9:.2f}B")
+            with dcf_col3:
+                st.metric("5th Percentile", f"${dcf_analytics['p05']/1e9:.2f}B")
+            with dcf_col4:
+                st.metric("95th Percentile", f"${dcf_analytics['p95']/1e9:.2f}B")
 
-        with col1:
-            st.metric("Mean", f"{analytics.summary_stats['mean']:.4f}")
-        with col2:
-            st.metric("Median", f"{analytics.summary_stats['median']:.4f}")
-        with col3:
-            st.metric("Std Dev", f"{analytics.summary_stats['std']:.4f}")
-        with col4:
-            st.metric("Skewness", f"{analytics.summary_stats['skew']:.4f}")
-        with col5:
-            st.metric("Kurtosis", f"{analytics.summary_stats['kurtosis']:.4f}")
+            if calculate_equity and equity_values is not None:
+                st.subheader("Equity Value per Share")
+                eq_col1, eq_col2, eq_col3, eq_col4 = st.columns(4)
+                with eq_col1:
+                    st.metric("Mean", f"${equity_mean:.2f}")
+                with eq_col2:
+                    st.metric("Median", f"${equity_median:.2f}")
+                with eq_col3:
+                    st.metric("5th Percentile", f"${equity_p05:.2f}")
+                with eq_col4:
+                    st.metric("95th Percentile", f"${equity_p95:.2f}")
+
+            # Use DCF values for visualization
+            analysis_array = dcf_values
+            analytics = None  # Analytics computed in dcf_analytics
+        else:
+            # Standard growth rate analysis
+            var_alphas = [0.01, 0.05, 0.10]
+            loss_threshold = st.sidebar.number_input(
+                "Loss threshold",
+                value=0.0,
+                step=0.01,
+                format="%.3f",
+                help="Threshold for probability of loss calculation",
+            )
+            target_value = st.sidebar.number_input(
+                "Target value",
+                value=None,
+                step=0.01,
+                format="%.3f",
+                help="Target value for probability calculation",
+            )
+
+            analytics = compute_analytics(
+                results,
+                var_alphas=var_alphas,
+                loss_threshold=loss_threshold if loss_threshold != 0 else None,
+                target_value=target_value,
+                compute_sensitivity=True,
+            )
+            analysis_array = results.paths[:, -1] if results.paths.shape[1] > 1 else results.paths[:, 0]
+
+        # Compute analytics for display
+        if not dcf_mode_active:
+            analytics = compute_analytics(
+                results,
+                var_alphas=[0.01, 0.05, 0.10],
+                compute_sensitivity=True,
+            )
+        else:
+            # Analytics already computed in dcf_analytics, but we need it for risk metrics
+            analytics = None
+
+        # Metrics cards (only show if not in DCF mode, or show both)
+        if not dcf_mode_active and analytics is not None:
+            st.header("Summary Statistics")
+            col1, col2, col3, col4, col5 = st.columns(5)
+
+            with col1:
+                st.metric("Mean", f"{analytics.summary_stats['mean']:.4f}")
+            with col2:
+                st.metric("Median", f"{analytics.summary_stats['median']:.4f}")
+            with col3:
+                st.metric("Std Dev", f"{analytics.summary_stats['std']:.4f}")
+            with col4:
+                st.metric("Skewness", f"{analytics.summary_stats['skew']:.4f}")
+            with col5:
+                st.metric("Kurtosis", f"{analytics.summary_stats['kurtosis']:.4f}")
 
         # Risk metrics
-        st.subheader("Risk Metrics")
-        risk_col1, risk_col2, risk_col3 = st.columns(3)
+        if not dcf_mode_active or analytics is not None:
+            st.subheader("Risk Metrics")
+            risk_col1, risk_col2, risk_col3 = st.columns(3)
 
-        with risk_col1:
-            st.metric("VaR (95%)", f"{analytics.var.get(0.05, 0):.4f}")
-        with risk_col2:
-            st.metric("CVaR (95%)", f"{analytics.cvar.get(0.05, 0):.4f}")
-        with risk_col3:
-            if analytics.prob_loss is not None:
-                st.metric("P(Loss)", f"{analytics.prob_loss:.4f}")
+            if analytics is not None:
+                with risk_col1:
+                    st.metric("VaR (95%)", f"{analytics.var.get(0.05, 0):.4f}")
+                with risk_col2:
+                    st.metric("CVaR (95%)", f"{analytics.cvar.get(0.05, 0):.4f}")
+                with risk_col3:
+                    if analytics.prob_loss is not None:
+                        st.metric("P(Loss)", f"{analytics.prob_loss:.4f}")
+            elif dcf_mode_active:
+                # Compute risk metrics from DCF values
+                from app.core.analytics import value_at_risk, conditional_var, probability_loss
+                var_95 = value_at_risk(dcf_values, 0.05)
+                cvar_95 = conditional_var(dcf_values, 0.05)
+                prob_loss = probability_loss(dcf_values, initial_fcf)  # Loss if below initial FCF
+                
+                with risk_col1:
+                    st.metric("VaR (95%)", f"${var_95/1e9:.2f}B")
+                with risk_col2:
+                    st.metric("CVaR (95%)", f"${cvar_95/1e9:.2f}B")
+                with risk_col3:
+                    st.metric("P(Value < Initial FCF)", f"{prob_loss:.4f}")
 
         # Visualization tabs
         tab1, tab2, tab3, tab4, tab5 = st.tabs(
@@ -256,17 +439,30 @@ def main() -> None:
         )
 
         with tab1:
-            # Use final year or aggregate
-            if results.paths.shape[1] == 1:
-                plot_data = results.paths[:, 0]
+            # Use DCF values if in DCF mode, otherwise use growth rates
+            if dcf_mode_active:
+                plot_data = dcf_values
+                title = "DCF Value Distribution"
             else:
-                plot_data = results.paths[:, -1]
+                if results.paths.shape[1] == 1:
+                    plot_data = results.paths[:, 0]
+                else:
+                    plot_data = results.paths[:, -1]
+                title = "Growth Rate Distribution"
 
-            fig = plot_distribution_histogram(plot_data, title="Output Distribution")
+            fig = plot_distribution_histogram(plot_data, title=title)
             st.plotly_chart(fig, use_container_width=True)
 
             # Quantile band
-            fig2 = plot_quantile_band(plot_data, analytics.quantiles)
+            if dcf_mode_active:
+                from app.core.analytics import compute_quantiles
+                quantiles_dict = compute_quantiles(plot_data)
+            elif analytics is not None:
+                quantiles_dict = analytics.quantiles
+            else:
+                from app.core.analytics import compute_quantiles
+                quantiles_dict = compute_quantiles(plot_data)
+            fig2 = plot_quantile_band(plot_data, quantiles_dict)
             st.plotly_chart(fig2, use_container_width=True)
 
         with tab2:
@@ -277,16 +473,24 @@ def main() -> None:
                 st.info("Fan chart requires multiple years")
 
         with tab3:
-            if results.paths.shape[1] == 1:
-                plot_data = results.paths[:, 0]
+            if dcf_mode_active:
+                plot_data = dcf_values
+                title = "DCF Value ECDF"
             else:
-                plot_data = results.paths[:, -1]
-            fig = plot_ecdf(plot_data, title="Empirical Cumulative Distribution")
+                if results.paths.shape[1] == 1:
+                    plot_data = results.paths[:, 0]
+                else:
+                    plot_data = results.paths[:, -1]
+                title = "Empirical Cumulative Distribution"
+            fig = plot_ecdf(plot_data, title=title)
             st.plotly_chart(fig, use_container_width=True)
 
         with tab4:
-            fig = plot_tornado(analytics, title="Sensitivity Analysis (Tornado)")
-            st.plotly_chart(fig, use_container_width=True)
+            if analytics is not None and analytics.sensitivity is not None:
+                fig = plot_tornado(analytics, title="Sensitivity Analysis (Tornado)")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Sensitivity analysis not available in DCF mode or for this configuration")
 
         with tab5:
             fig = plot_convergence(results, title="Convergence Analysis")
@@ -298,7 +502,15 @@ def main() -> None:
 
         with export_col1:
             # CSV export
-            df = pd.DataFrame(results.paths, columns=[f"Year {i+1}" for i in range(results.paths.shape[1])])
+            if dcf_mode_active:
+                df = pd.DataFrame({
+                    **{f"Year {i+1} Growth": results.paths[:, i] for i in range(results.paths.shape[1])},
+                    "DCF Value": dcf_values,
+                })
+                if equity_values is not None:
+                    df["Equity Value per Share"] = equity_values
+            else:
+                df = pd.DataFrame(results.paths, columns=[f"Year {i+1}" for i in range(results.paths.shape[1])])
             csv = df.to_csv(index=False)
             st.download_button(
                 label="📥 Download CSV",
