@@ -25,7 +25,7 @@ from typing import Dict, Tuple
 # ============================================================================
 
 # Base free cash flow (FY2025)
-fcf_base_2025 = 107.509395  # billions USD
+fcf_base_2025 = 105.0  # billions USD
 
 # Discount rate (WACC)
 wacc = 0.0821  # 8.21%

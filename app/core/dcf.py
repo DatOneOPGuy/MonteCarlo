@@ -20,6 +20,7 @@ def calculate_dcf_value(
     terminal_growth: float | None = None,
     terminal_multiple: float | None = None,
     years: int = 2,
+    fcf_in_billions: bool = True,
 ) -> np.ndarray:
     """
     Calculate DCF value for each simulation path.
@@ -38,6 +39,8 @@ def calculate_dcf_value(
         Terminal multiple (EV/EBITDA or similar) - alternative to terminal growth
     years : int
         Number of projection years
+    fcf_in_billions : bool
+        If True, assumes FCF is in billions (for display purposes)
 
     Returns
     -------
@@ -85,6 +88,7 @@ def dcf_valuation_from_results(
     wacc: float,
     terminal_growth: float | None = None,
     terminal_multiple: float | None = None,
+    fcf_in_billions: bool = True,
 ) -> tuple[np.ndarray, dict]:
     """
     Perform DCF valuation from simulation results.
@@ -94,18 +98,20 @@ def dcf_valuation_from_results(
     results : SimResults
         Simulation results with growth rate paths
     initial_fcf : float
-        Initial free cash flow
+        Initial free cash flow (in billions if fcf_in_billions=True)
     wacc : float
         Weighted average cost of capital
     terminal_growth : float or None
         Perpetual growth rate
     terminal_multiple : float or None
         Terminal multiple
+    fcf_in_billions : bool
+        If True, assumes FCF is in billions (output will also be in billions)
 
     Returns
     -------
     tuple
-        (dcf_values, analytics_dict)
+        (dcf_values, analytics_dict) - both in billions if fcf_in_billions=True
     """
     # Use growth rate paths as input
     growth_rates = results.paths
@@ -119,6 +125,7 @@ def dcf_valuation_from_results(
         terminal_growth=terminal_growth,
         terminal_multiple=terminal_multiple,
         years=n_years,
+        fcf_in_billions=fcf_in_billions,
     )
 
     # Compute analytics on DCF values

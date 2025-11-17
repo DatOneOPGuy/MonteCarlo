@@ -96,7 +96,8 @@ def main() -> None:
     """Main application entry point."""
     st.title("📊 Monte Carlo DCF / Growth Rate Uncertainty Simulator")
     st.markdown(
-        "Model discounted cash flow and growth-rate uncertainty with advanced analytics"
+        "Model discounted cash flow and growth-rate uncertainty with advanced analytics. "
+        "**Perfect for Apple valuation analysis!**"
     )
 
     # Sidebar controls
@@ -108,6 +109,20 @@ def main() -> None:
         value=False,
         help="Enable DCF valuation with terminal value calculation",
     )
+    
+    # Apple Project Preset
+    apple_preset = st.sidebar.checkbox(
+        "Use Apple Project Presets",
+        value=False,
+        help="Load Apple-specific parameters (FCF, WACC, triangular distributions)",
+    )
+    
+    # Show Apple preset info if enabled
+    if apple_preset and dcf_mode:
+        st.info(
+            "🍎 **Apple Project Preset Active**: Using FY2025 FCF ($105.0B), WACC (8.21%), "
+            "and triangular growth distributions for Year 1 & Year 2."
+        )
 
     # Number of years
     n_years = st.sidebar.number_input(
@@ -121,20 +136,31 @@ def main() -> None:
     # DCF-specific inputs
     if dcf_mode:
         st.sidebar.subheader("DCF Parameters")
+        
+        # Apple preset values
+        if apple_preset:
+            preset_fcf = 105.0  # FY2025 FCF in billions
+            preset_wacc = 0.0821  # 8.21%
+            preset_terminal = 0.03  # 3%
+        else:
+            preset_fcf = 100.0
+            preset_wacc = 0.0766
+            preset_terminal = 0.03
+        
         initial_fcf = st.sidebar.number_input(
-            "Initial Free Cash Flow (Year 0)",
+            "Initial Free Cash Flow (Year 0, Billions USD)",
             min_value=0.0,
-            value=100_000_000_000.0,  # $100B default (Apple scale)
-            step=1_000_000_000.0,
-            format="%.0f",
+            value=preset_fcf,
+            step=1.0,
+            format="%.3f",
             help="Free cash flow in Year 0 (before projections)",
         )
         wacc = st.sidebar.number_input(
             "WACC (Discount Rate)",
             min_value=0.0,
             max_value=1.0,
-            value=0.0766,  # Apple's WACC from project
-            step=0.001,
+            value=preset_wacc,
+            step=0.0001,
             format="%.4f",
             help="Weighted Average Cost of Capital",
         )
@@ -150,7 +176,7 @@ def main() -> None:
                 "Terminal Growth Rate",
                 min_value=-0.1,
                 max_value=0.1,
-                value=0.03,
+                value=preset_terminal if apple_preset else 0.03,
                 step=0.001,
                 format="%.3f",
                 help="Perpetual growth rate (Gordon Growth Model)",
@@ -163,6 +189,18 @@ def main() -> None:
                 step=0.5,
                 help="Terminal multiple (e.g., EV/EBITDA)",
             )
+        
+        # Market cap for comparison
+        market_cap = st.sidebar.number_input(
+            "Market Cap (Billions USD, Optional)",
+            min_value=0.0,
+            value=None,
+            step=10.0,
+            format="%.2f",
+            help="Apple's market cap for comparison (set to None to disable)",
+        )
+        if market_cap == 0:
+            market_cap = None
 
         # Equity value calculation
         st.sidebar.subheader("Equity Value (Optional)")
@@ -204,7 +242,52 @@ def main() -> None:
     year_configs = []
     for i in range(n_years):
         with st.sidebar.expander(f"Year {i+1}", expanded=i==0):
-            dist_config = render_distribution_selector(i + 1)
+            # Apple preset: use triangular distributions
+            if apple_preset and dcf_mode and i < 2:
+                if i == 0:
+                    # Year 1: min=-0.15, mode=0.08, max=0.34
+                    st.markdown("**🍎 Apple Preset: Year 1 (FY2026) Growth Rate**")
+                    st.markdown("**Triangular Distribution Parameters:**")
+                    col_a, col_c, col_b = st.columns(3)
+                    with col_a:
+                        st.metric("Min (a)", "-0.15", help="Lower bound: -15% growth")
+                    with col_c:
+                        st.metric("Mode (c)", "0.08", help="Most likely: 8% growth")
+                    with col_b:
+                        st.metric("Max (b)", "0.34", help="Upper bound: 34% growth")
+                    
+                    dist_config = {
+                        "type": "triangular",
+                        "a": -0.15,
+                        "b": 0.34,
+                        "c": 0.08,
+                    }
+                else:
+                    # Year 2: min=-0.15, mode=0.15, max=0.41
+                    st.markdown("**🍎 Apple Preset: Year 2 (FY2027) Growth Rate**")
+                    st.markdown("**Triangular Distribution Parameters:**")
+                    col_a, col_c, col_b = st.columns(3)
+                    with col_a:
+                        st.metric("Min (a)", "-0.15", help="Lower bound: -15% growth")
+                    with col_c:
+                        st.metric("Mode (c)", "0.15", help="Most likely: 15% growth")
+                    with col_b:
+                        st.metric("Max (b)", "0.41", help="Upper bound: 41% growth")
+                    
+                    dist_config = {
+                        "type": "triangular",
+                        "a": -0.15,
+                        "b": 0.41,
+                        "c": 0.15,
+                    }
+                # Show preset values but allow override
+                st.markdown("---")
+                override = st.checkbox(f"Override Year {i+1} preset", value=False, key=f"override_{i}")
+                if override:
+                    dist_config = render_distribution_selector(i + 1)
+            else:
+                dist_config = render_distribution_selector(i + 1)
+            
             deterministic = st.checkbox(
                 f"Use deterministic value for Year {i+1}",
                 value=False,
@@ -271,10 +354,12 @@ def main() -> None:
                     st.session_state["wacc"] = wacc
                     st.session_state["terminal_growth"] = terminal_growth
                     st.session_state["terminal_multiple"] = terminal_multiple
+                    st.session_state["market_cap"] = market_cap
                     st.session_state["calculate_equity"] = calculate_equity
                     st.session_state["cash"] = cash
                     st.session_state["debt"] = debt
                     st.session_state["shares"] = shares
+                    st.session_state["apple_preset"] = apple_preset
                 st.success("✅ Simulation completed!")
 
             except Exception as e:
@@ -292,23 +377,28 @@ def main() -> None:
         dcf_mode_active = st.session_state.get("dcf_mode", dcf_mode)
         
         # Initialize DCF variables with defaults
-        initial_fcf = st.session_state.get("initial_fcf", 100_000_000_000.0)
-        wacc = st.session_state.get("wacc", 0.0766)
+        initial_fcf = st.session_state.get("initial_fcf", 105.0)  # Billions
+        wacc = st.session_state.get("wacc", 0.0821)
         terminal_growth = st.session_state.get("terminal_growth", None)
         terminal_multiple = st.session_state.get("terminal_multiple", None)
+        market_cap = st.session_state.get("market_cap", None)
         calculate_equity = st.session_state.get("calculate_equity", False)
         cash = st.session_state.get("cash", 0.0)
         debt = st.session_state.get("debt", 0.0)
         shares = st.session_state.get("shares", 0.0)
+        apple_preset_used = st.session_state.get("apple_preset", False)
 
         # DCF valuation if enabled
         if dcf_mode_active:
+            # Convert initial_fcf to actual value (it's stored in billions)
+            # The growth rates from simulation are already in the right format
             dcf_values, dcf_analytics = dcf_valuation_from_results(
                 results,
-                initial_fcf=initial_fcf,
+                initial_fcf=initial_fcf,  # Already in billions
                 wacc=wacc,
                 terminal_growth=terminal_growth,
                 terminal_multiple=terminal_multiple,
+                fcf_in_billions=True,  # All values in billions
             )
 
             # Calculate equity value if requested
@@ -326,16 +416,55 @@ def main() -> None:
                 equity_mean = equity_median = equity_p05 = equity_p95 = None
 
             # Display DCF results
-            st.header("DCF Valuation Results")
+            st.header("DCF Valuation Results (Enterprise Value)")
+            
+            # Show distribution parameters used
+            if apple_preset_used:
+                st.markdown("**Growth Rate Distributions Used:**")
+                dist_col1, dist_col2 = st.columns(2)
+                with dist_col1:
+                    st.markdown("**Year 1 (FY2026):**")
+                    st.code("Triangular(min=-0.15, mode=0.08, max=0.34)")
+                with dist_col2:
+                    st.markdown("**Year 2 (FY2027):**")
+                    st.code("Triangular(min=-0.15, mode=0.15, max=0.41)")
+            
             dcf_col1, dcf_col2, dcf_col3, dcf_col4 = st.columns(4)
             with dcf_col1:
-                st.metric("Mean DCF Value", f"${dcf_analytics['mean']/1e9:.2f}B")
+                st.metric("Mean EV", f"${dcf_analytics['mean']:.2f}B")
             with dcf_col2:
-                st.metric("Median DCF Value", f"${dcf_analytics['median']/1e9:.2f}B")
+                st.metric("Median EV", f"${dcf_analytics['median']:.2f}B")
             with dcf_col3:
-                st.metric("5th Percentile", f"${dcf_analytics['p05']/1e9:.2f}B")
+                st.metric("5th Percentile", f"${dcf_analytics['p05']:.2f}B")
             with dcf_col4:
-                st.metric("95th Percentile", f"${dcf_analytics['p95']/1e9:.2f}B")
+                st.metric("95th Percentile", f"${dcf_analytics['p95']:.2f}B")
+            
+            # Market cap comparison
+            if market_cap is not None and market_cap > 0:
+                mean_ev = dcf_analytics['mean']
+                diff = mean_ev - market_cap
+                pct_diff = (diff / market_cap) * 100
+                prob_ev_gt_mkt = float(np.mean(dcf_values > market_cap))
+                
+                st.subheader("Comparison to Market Capitalization")
+                comp_col1, comp_col2, comp_col3, comp_col4 = st.columns(4)
+                with comp_col1:
+                    st.metric("Mean EV", f"${mean_ev:.2f}B")
+                with comp_col2:
+                    st.metric("Market Cap", f"${market_cap:.2f}B")
+                with comp_col3:
+                    st.metric(
+                        "Difference",
+                        f"${diff:.2f}B",
+                        delta=f"{pct_diff:.2f}%",
+                    )
+                with comp_col4:
+                    st.metric("P(EV > Market)", f"{prob_ev_gt_mkt:.2%}")
+                
+                if diff > 0:
+                    st.success(f"✓ Model suggests **UNDERVALUED** by ${diff:.2f}B ({pct_diff:.2f}%)")
+                else:
+                    st.warning(f"⚠ Model suggests **OVERVALUED** by ${abs(diff):.2f}B ({abs(pct_diff):.2f}%)")
 
             if calculate_equity and equity_values is not None:
                 st.subheader("Equity Value per Share")
@@ -427,11 +556,11 @@ def main() -> None:
                 prob_loss = probability_loss(dcf_values, initial_fcf)  # Loss if below initial FCF
                 
                 with risk_col1:
-                    st.metric("VaR (95%)", f"${var_95/1e9:.2f}B")
+                    st.metric("VaR (95%)", f"${var_95:.2f}B")
                 with risk_col2:
-                    st.metric("CVaR (95%)", f"${cvar_95/1e9:.2f}B")
+                    st.metric("CVaR (95%)", f"${cvar_95:.2f}B")
                 with risk_col3:
-                    st.metric("P(Value < Initial FCF)", f"{prob_loss:.4f}")
+                    st.metric("P(EV < Initial FCF)", f"{prob_loss:.4f}")
 
         # Visualization tabs
         tab1, tab2, tab3, tab4, tab5 = st.tabs(
@@ -443,6 +572,31 @@ def main() -> None:
             if dcf_mode_active:
                 plot_data = dcf_values
                 title = "DCF Value Distribution"
+                
+                # Show growth rate distributions if available
+                if results.paths.shape[1] >= 2:
+                    st.subheader("Growth Rate Distributions (Input)")
+                    growth_col1, growth_col2 = st.columns(2)
+                    
+                    with growth_col1:
+                        st.markdown("**Year 1 Growth Rate**")
+                        fig_g1 = plot_distribution_histogram(
+                            results.paths[:, 0],
+                            title="Year 1 (FY2026) Growth Rate Distribution",
+                        )
+                        st.plotly_chart(fig_g1, use_container_width=True)
+                    
+                    with growth_col2:
+                        st.markdown("**Year 2 Growth Rate**")
+                        fig_g2 = plot_distribution_histogram(
+                            results.paths[:, 1],
+                            title="Year 2 (FY2027) Growth Rate Distribution",
+                        )
+                        st.plotly_chart(fig_g2, use_container_width=True)
+                    
+                    st.markdown("---")
+                    st.subheader("Enterprise Value Distribution (Output)")
+                
             else:
                 if results.paths.shape[1] == 1:
                     plot_data = results.paths[:, 0]

@@ -108,27 +108,47 @@ def render_distribution_selector(year: int, default_type: str = "normal") -> Dis
         )
 
     elif dist_type == "triangular":
-        dist_config["a"] = st.number_input(
-            "Lower bound (a)",
-            value=-0.10,
-            step=0.01,
-            format="%.3f",
-            key=f"tri_a_{year}",
-        )
-        dist_config["c"] = st.number_input(
-            "Mode (c)",
-            value=0.05,
-            step=0.01,
-            format="%.3f",
-            key=f"tri_c_{year}",
-        )
-        dist_config["b"] = st.number_input(
-            "Upper bound (b)",
-            value=0.20,
-            step=0.01,
-            format="%.3f",
-            key=f"tri_b_{year}",
-        )
+        st.markdown("**Triangular Distribution Parameters**")
+        st.caption("The mode (c) is the most likely value, creating a peak in the distribution")
+        
+        # Display in columns for better visibility
+        col_a, col_c, col_b = st.columns(3)
+        
+        with col_a:
+            dist_config["a"] = st.number_input(
+                "Lower bound (a)",
+                value=-0.10,
+                step=0.01,
+                format="%.3f",
+                key=f"tri_a_{year}",
+                help="Minimum value (left bound)",
+            )
+        
+        with col_c:
+            dist_config["c"] = st.number_input(
+                "Mode (c)",
+                value=0.05,
+                step=0.01,
+                format="%.3f",
+                key=f"tri_c_{year}",
+                help="Most likely value (peak of distribution)",
+            )
+        
+        with col_b:
+            dist_config["b"] = st.number_input(
+                "Upper bound (b)",
+                value=0.20,
+                step=0.01,
+                format="%.3f",
+                key=f"tri_b_{year}",
+                help="Maximum value (right bound)",
+            )
+        
+        # Validation message
+        if dist_config["a"] <= dist_config["c"] <= dist_config["b"]:
+            st.success(f"✓ Valid: {dist_config['a']:.3f} ≤ {dist_config['c']:.3f} ≤ {dist_config['b']:.3f}")
+        else:
+            st.error(f"⚠ Invalid: Must have a ≤ c ≤ b")
 
     elif dist_type == "uniform":
         dist_config["low"] = st.number_input(

@@ -2,6 +2,8 @@
 
 This guide explains how to use the Monte Carlo DCF simulator for your Apple valuation project.
 
+> **📚 For a detailed explanation of why Monte Carlo simulation and FCF growth rates are used, see [METHODOLOGY_EXPLANATION.md](METHODOLOGY_EXPLANATION.md)**
+
 ## Quick Start for Apple Analysis
 
 ### Step 1: Enable DCF Mode
@@ -12,7 +14,7 @@ This guide explains how to use the Monte Carlo DCF simulator for your Apple valu
 
 **Initial Free Cash Flow (Year 0)**
 - Use Apple's most recent FCF from their 10-K or financial statements
-- Example: If Apple's FCF is $100B, enter `100000000000`
+- Apple's FY2025 FCF: **$105.0 billion** (already set as default in preset)
 
 **WACC (Discount Rate)**
 - Your project uses **7.66%** (0.0766)
