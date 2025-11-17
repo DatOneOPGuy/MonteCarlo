@@ -35,6 +35,7 @@ from app.ui.controls import (
 from app.ui.plots import (
     plot_convergence,
     plot_distribution_histogram,
+    plot_distribution_preview,
     plot_ecdf,
     plot_fan_chart,
     plot_quantile_band,
@@ -202,10 +203,12 @@ def main() -> None:
         if market_cap == 0:
             market_cap = None
 
-        # Equity value calculation
-        st.sidebar.subheader("Equity Value (Optional)")
-        calculate_equity = st.sidebar.checkbox("Calculate Equity Value per Share", value=False)
-        if calculate_equity:
+        # Equity value calculation (optional, hidden by default)
+        calculate_equity = False  # Disabled - focus on Enterprise Value only
+        # Uncomment below if you want to enable per-share calculations
+        # st.sidebar.subheader("Equity Value (Optional)")
+        # calculate_equity = st.sidebar.checkbox("Calculate Equity Value per Share", value=False)
+        if False:  # calculate_equity:
             cash = st.sidebar.number_input(
                 "Cash & Equivalents",
                 value=0.0,
@@ -234,8 +237,11 @@ def main() -> None:
     # Scenario controls
     scenario_name, scenario_weight = render_scenario_controls()
 
-    # Correlation
-    correlation = render_correlation_controls(n_years)
+    # Correlation - auto-enable with 0.6 for Apple preset
+    if apple_preset and dcf_mode and n_years >= 2:
+        # Pre-set correlation for Apple preset
+        st.sidebar.info("🍎 **Apple Preset**: Correlation automatically enabled (Year 1 ↔ Year 2 = 0.6)")
+    correlation = render_correlation_controls(n_years, apple_preset=apple_preset and dcf_mode)
 
     # Build year configurations
     st.sidebar.subheader("Year Configurations")
@@ -327,6 +333,14 @@ def main() -> None:
         st.code(traceback.format_exc())
         st.stop()
 
+    # Distribution Preview Section (moved to sidebar, but will also show in main area)
+    st.sidebar.markdown("---")
+    show_preview = st.sidebar.checkbox(
+        "Show Distribution Previews",
+        value=True,
+        help="Preview what each year's distribution looks like based on current parameters",
+    )
+
     # Run button
     if st.sidebar.button("▶️ Run Simulation", type="primary", use_container_width=True):
         with st.spinner("Running simulation..."):
@@ -415,8 +429,9 @@ def main() -> None:
                 equity_values = None
                 equity_mean = equity_median = equity_p05 = equity_p95 = None
 
-            # Display DCF results
-            st.header("DCF Valuation Results (Enterprise Value)")
+            # Display DCF results - Enterprise Value is the primary output
+            st.header("📊 DCF Valuation Results")
+            st.subheader("Enterprise Value (Billions USD)")
             
             # Show distribution parameters used
             if apple_preset_used:
@@ -429,15 +444,28 @@ def main() -> None:
                     st.markdown("**Year 2 (FY2027):**")
                     st.code("Triangular(min=-0.15, mode=0.15, max=0.41)")
             
-            dcf_col1, dcf_col2, dcf_col3, dcf_col4 = st.columns(4)
-            with dcf_col1:
-                st.metric("Mean EV", f"${dcf_analytics['mean']:.2f}B")
-            with dcf_col2:
-                st.metric("Median EV", f"${dcf_analytics['median']:.2f}B")
-            with dcf_col3:
-                st.metric("5th Percentile", f"${dcf_analytics['p05']:.2f}B")
-            with dcf_col4:
-                st.metric("95th Percentile", f"${dcf_analytics['p95']:.2f}B")
+            # Primary Enterprise Value metrics
+            ev_col1, ev_col2, ev_col3, ev_col4 = st.columns(4)
+            with ev_col1:
+                st.metric("Mean Enterprise Value", f"${dcf_analytics['mean']:.2f}B", help="Average Enterprise Value across all simulations")
+            with ev_col2:
+                st.metric("Median Enterprise Value", f"${dcf_analytics['median']:.2f}B", help="50th percentile Enterprise Value")
+            with ev_col3:
+                st.metric("5th Percentile EV", f"${dcf_analytics['p05']:.2f}B", help="5% of simulations have EV below this value")
+            with ev_col4:
+                st.metric("95th Percentile EV", f"${dcf_analytics['p95']:.2f}B", help="95% of simulations have EV below this value")
+            
+            # Additional Enterprise Value statistics
+            st.markdown("**Additional Enterprise Value Statistics:**")
+            ev_stats_col1, ev_stats_col2, ev_stats_col3, ev_stats_col4 = st.columns(4)
+            with ev_stats_col1:
+                st.metric("Std Deviation", f"${dcf_analytics.get('std', 0):.2f}B")
+            with ev_stats_col2:
+                st.metric("1st Percentile", f"${dcf_analytics.get('p01', 0):.2f}B")
+            with ev_stats_col3:
+                st.metric("25th Percentile", f"${dcf_analytics.get('p25', 0):.2f}B")
+            with ev_stats_col4:
+                st.metric("75th Percentile", f"${dcf_analytics.get('p75', 0):.2f}B")
             
             # Market cap comparison
             if market_cap is not None and market_cap > 0:
@@ -466,17 +494,19 @@ def main() -> None:
                 else:
                     st.warning(f"⚠ Model suggests **OVERVALUED** by ${abs(diff):.2f}B ({abs(pct_diff):.2f}%)")
 
-            if calculate_equity and equity_values is not None:
-                st.subheader("Equity Value per Share")
-                eq_col1, eq_col2, eq_col3, eq_col4 = st.columns(4)
-                with eq_col1:
-                    st.metric("Mean", f"${equity_mean:.2f}")
-                with eq_col2:
-                    st.metric("Median", f"${equity_median:.2f}")
-                with eq_col3:
-                    st.metric("5th Percentile", f"${equity_p05:.2f}")
-                with eq_col4:
-                    st.metric("95th Percentile", f"${equity_p95:.2f}")
+            # Equity Value per Share section removed - focus on Enterprise Value only
+            # Uncomment below if you want to show per-share calculations
+            # if calculate_equity and equity_values is not None:
+            #     st.subheader("Equity Value per Share")
+            #     eq_col1, eq_col2, eq_col3, eq_col4 = st.columns(4)
+            #     with eq_col1:
+            #         st.metric("Mean", f"${equity_mean:.2f}")
+            #     with eq_col2:
+            #         st.metric("Median", f"${equity_median:.2f}")
+            #     with eq_col3:
+            #         st.metric("5th Percentile", f"${equity_p05:.2f}")
+            #     with eq_col4:
+            #         st.metric("95th Percentile", f"${equity_p95:.2f}")
 
             # Use DCF values for visualization
             analysis_array = dcf_values
@@ -563,51 +593,52 @@ def main() -> None:
                     st.metric("P(EV < Initial FCF)", f"{prob_loss:.4f}")
 
         # Visualization tabs
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(
-            ["📊 Distribution", "📈 Fan Chart", "📉 ECDF", "🌪️ Tornado", "🔄 Convergence"]
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+            ["📊 Distribution", "📈 Fan Chart", "📉 ECDF", "🌪️ Tornado", "🔄 Convergence", "📋 Growth Rate Distributions"]
         )
 
         with tab1:
-            # Use DCF values if in DCF mode, otherwise use growth rates
+            # Always show Year 1 and Year 2 growth rate distributions if available
+            if results.paths.shape[1] >= 2:
+                st.subheader("Growth Rate Distributions")
+                growth_col1, growth_col2 = st.columns(2)
+                
+                with growth_col1:
+                    st.markdown("**Year 1 Growth Rate**")
+                    fig_g1 = plot_distribution_histogram(
+                        results.paths[:, 0],
+                        title="Year 1 Growth Rate Distribution",
+                    )
+                    st.plotly_chart(fig_g1, use_container_width=True)
+                
+                with growth_col2:
+                    st.markdown("**Year 2 Growth Rate**")
+                    fig_g2 = plot_distribution_histogram(
+                        results.paths[:, 1],
+                        title="Year 2 Growth Rate Distribution",
+                    )
+                    st.plotly_chart(fig_g2, use_container_width=True)
+                
+                st.markdown("---")
+            
+            # Show main output distribution (Enterprise Value in DCF mode, or final year growth rate)
             if dcf_mode_active:
                 plot_data = dcf_values
-                title = "DCF Value Distribution"
-                
-                # Show growth rate distributions if available
-                if results.paths.shape[1] >= 2:
-                    st.subheader("Growth Rate Distributions (Input)")
-                    growth_col1, growth_col2 = st.columns(2)
-                    
-                    with growth_col1:
-                        st.markdown("**Year 1 Growth Rate**")
-                        fig_g1 = plot_distribution_histogram(
-                            results.paths[:, 0],
-                            title="Year 1 (FY2026) Growth Rate Distribution",
-                        )
-                        st.plotly_chart(fig_g1, use_container_width=True)
-                    
-                    with growth_col2:
-                        st.markdown("**Year 2 Growth Rate**")
-                        fig_g2 = plot_distribution_histogram(
-                            results.paths[:, 1],
-                            title="Year 2 (FY2027) Growth Rate Distribution",
-                        )
-                        st.plotly_chart(fig_g2, use_container_width=True)
-                    
-                    st.markdown("---")
-                    st.subheader("Enterprise Value Distribution (Output)")
-                
+                title = "Enterprise Value Distribution (Billions USD)"
+                st.subheader("Enterprise Value Distribution (Output)")
             else:
                 if results.paths.shape[1] == 1:
                     plot_data = results.paths[:, 0]
+                    title = "Growth Rate Distribution"
                 else:
                     plot_data = results.paths[:, -1]
-                title = "Growth Rate Distribution"
+                    title = "Final Year Growth Rate Distribution"
 
             fig = plot_distribution_histogram(plot_data, title=title)
             st.plotly_chart(fig, use_container_width=True)
 
             # Quantile band
+            st.subheader("Quantile Analysis")
             if dcf_mode_active:
                 from app.core.analytics import compute_quantiles
                 quantiles_dict = compute_quantiles(plot_data)
@@ -620,6 +651,15 @@ def main() -> None:
             st.plotly_chart(fig2, use_container_width=True)
 
         with tab2:
+            st.markdown("""
+            **Fan Chart Explanation:**
+            A fan chart shows the uncertainty in projections over time. The colored bands represent different probability ranges:
+            - **Red band (outer)**: 5th to 95th percentile range (90% of simulations fall within this range)
+            - **Orange band (middle)**: 25th to 75th percentile range (50% of simulations fall within this range)
+            - **Blue line**: Median (50th percentile) - the middle value across all simulations
+            
+            Wider bands indicate greater uncertainty, while narrower bands suggest more confidence in the projections.
+            """)
             if results.paths.shape[1] > 1:
                 fig = plot_fan_chart(results, title="Multi-Year Fan Chart")
                 st.plotly_chart(fig, use_container_width=True)
@@ -627,9 +667,18 @@ def main() -> None:
                 st.info("Fan chart requires multiple years")
 
         with tab3:
+            st.markdown("""
+            **ECDF (Empirical Cumulative Distribution Function) Explanation:**
+            The ECDF shows the cumulative probability of values. For any value on the x-axis:
+            - The y-axis shows the **percentage of simulations** that resulted in a value less than or equal to that value
+            - For example, if the curve is at 0.5 (50%) for a value of $100B, it means 50% of simulations produced Enterprise Values ≤ $100B
+            - Steeper curves indicate values are more concentrated, while flatter curves suggest wider spread
+            
+            This helps you understand: "What's the probability that Enterprise Value will be below a certain threshold?"
+            """)
             if dcf_mode_active:
                 plot_data = dcf_values
-                title = "DCF Value ECDF"
+                title = "Enterprise Value ECDF (Billions USD)"
             else:
                 if results.paths.shape[1] == 1:
                     plot_data = results.paths[:, 0]
@@ -647,22 +696,70 @@ def main() -> None:
                 st.info("Sensitivity analysis not available in DCF mode or for this configuration")
 
         with tab5:
+            st.markdown("""
+            **Convergence Analysis Explanation:**
+            The convergence plot shows how the mean value stabilizes as more simulations are added. This helps verify:
+            - **Stability**: Does the mean converge to a stable value, or does it keep changing?
+            - **Sample size adequacy**: Have you run enough simulations to get reliable results?
+            - **Confidence**: If the line flattens out, you can be more confident in your results
+            
+            The **red dashed line** shows the final mean value. If the blue line is still trending up or down at the end, you may need more simulations.
+            """)
             fig = plot_convergence(results, title="Convergence Analysis")
             st.plotly_chart(fig, use_container_width=True)
+
+        with tab6:
+            st.header("📋 FCF Growth Rate Distributions")
+            st.markdown(
+                "**Visualization of what each year's growth rate distribution looks like based on your configured parameters.**"
+            )
+            try:
+                preview_fig = plot_distribution_preview(year_configs, n_preview_samples=10_000, seed=42)
+                st.plotly_chart(preview_fig, use_container_width=True)
+                
+                # Show parameter summary
+                st.subheader("Distribution Parameters Summary")
+                param_cols = st.columns(min(len(year_configs), 3))
+                for idx, (dist_config, det_value) in enumerate(year_configs):
+                    with param_cols[idx % len(param_cols)]:
+                        st.markdown(f"**Year {idx+1}:**")
+                        if det_value is not None:
+                            st.code(f"Deterministic: {det_value:.3f}")
+                        else:
+                            dist_type = dist_config.get("type", "unknown")
+                            if dist_type == "normal":
+                                st.code(f"Normal(μ={dist_config.get('mu', 0):.3f}, σ={dist_config.get('sigma', 1):.3f})")
+                            elif dist_type == "triangular":
+                                st.code(f"Triangular(a={dist_config.get('a', 0):.3f}, c={dist_config.get('c', 0):.3f}, b={dist_config.get('b', 1):.3f})")
+                            elif dist_type == "uniform":
+                                st.code(f"Uniform(low={dist_config.get('low', 0):.3f}, high={dist_config.get('high', 1):.3f})")
+                            elif dist_type == "lognormal":
+                                st.code(f"Lognormal(μ={dist_config.get('mu', 0):.3f}, σ={dist_config.get('sigma', 1):.3f})")
+                            elif dist_type == "student_t":
+                                st.code(f"Student-t(df={dist_config.get('df', 5):.1f}, μ={dist_config.get('mu', 0):.3f}, σ={dist_config.get('sigma', 1):.3f})")
+                            elif dist_type == "beta":
+                                st.code(f"Beta(α={dist_config.get('alpha', 1):.2f}, β={dist_config.get('beta', 1):.2f})")
+                            else:
+                                st.code(f"Type: {dist_type}")
+            except Exception as e:
+                st.error(f"Error generating distribution preview: {e}")
+                import traceback
+                st.code(traceback.format_exc())
 
         # Data export
         st.subheader("Export Results")
         export_col1, export_col2, export_col3 = st.columns(3)
 
         with export_col1:
-            # CSV export
+            # CSV export - Enterprise Value is the primary output
             if dcf_mode_active:
                 df = pd.DataFrame({
-                    **{f"Year {i+1} Growth": results.paths[:, i] for i in range(results.paths.shape[1])},
-                    "DCF Value": dcf_values,
+                    **{f"Year {i+1} Growth Rate": results.paths[:, i] for i in range(results.paths.shape[1])},
+                    "Enterprise Value (Billions USD)": dcf_values,
                 })
-                if equity_values is not None:
-                    df["Equity Value per Share"] = equity_values
+                # Per-share values removed - focus on Enterprise Value
+                # if equity_values is not None:
+                #     df["Equity Value per Share"] = equity_values
             else:
                 df = pd.DataFrame(results.paths, columns=[f"Year {i+1}" for i in range(results.paths.shape[1])])
             csv = df.to_csv(index=False)

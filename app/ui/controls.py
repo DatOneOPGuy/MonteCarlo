@@ -261,18 +261,40 @@ def render_distribution_selector(year: int, default_type: str = "normal") -> Dis
     return dist_config
 
 
-def render_correlation_controls(n_years: int) -> CorrelationConfig:
+def render_correlation_controls(n_years: int, apple_preset: bool = False) -> CorrelationConfig:
     """Render correlation matrix input controls."""
+    # Auto-enable correlation for Apple preset
+    default_enabled = apple_preset and n_years >= 2
     enabled = st.checkbox(
         "Enable correlation between years",
-        value=False,
+        value=default_enabled,
         help="Apply correlation structure across years using Cholesky decomposition",
     )
 
     if not enabled:
         return CorrelationConfig(matrix=np.eye(n_years), enabled=False)
 
-    st.markdown("**Correlation Matrix**")
+    # Special handling for Year 1 ↔ Year 2 correlation when n_years >= 2
+    year1_year2_corr = None
+    if n_years >= 2:
+        st.markdown("**Year 1 ↔ Year 2 Correlation**")
+        # Use 0.6 as default for Apple preset, otherwise 0.6
+        default_corr = 0.6 if apple_preset else 0.6
+        year1_year2_corr = st.number_input(
+            "Correlation Coefficient (Year 1 ↔ Year 2)",
+            min_value=-1.0,
+            max_value=1.0,
+            value=default_corr,
+            step=0.05,
+            format="%.2f",
+            key="year1_year2_corr",
+            help="Correlation between Year 1 and Year 2 growth rates (default: 0.6)",
+        )
+        if apple_preset:
+            st.caption("🍎 Apple Preset: Using 0.6 correlation coefficient")
+        st.markdown("---")
+
+    st.markdown("**Full Correlation Matrix**")
     st.caption("Enter correlation values (must be symmetric, positive definite)")
 
     # Build matrix input
@@ -282,6 +304,12 @@ def render_correlation_controls(n_years: int) -> CorrelationConfig:
         for j in range(n_years):
             if i == j:
                 value = 1.0
+            elif i == 0 and j == 1 and year1_year2_corr is not None:
+                # Use the Year 1 ↔ Year 2 correlation value
+                value = year1_year2_corr
+            elif j == 0 and i == 1 and year1_year2_corr is not None:
+                # Symmetric: Year 2 ↔ Year 1
+                value = year1_year2_corr
             else:
                 value = st.number_input(
                     f"Year {i+1} ↔ Year {j+1}",
@@ -299,7 +327,7 @@ def render_correlation_controls(n_years: int) -> CorrelationConfig:
 
     # Validate
     try:
-        CorrelationMatrix(matrix=matrix_input.tolist())
+        CorrelationMatrix(matrix=matrix.tolist())
         st.success("✓ Valid correlation matrix")
     except Exception as e:
         st.error(f"Invalid correlation matrix: {e}")
