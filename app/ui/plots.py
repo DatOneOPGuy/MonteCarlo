@@ -554,11 +554,11 @@ def plot_distribution_preview(
                 )
         
         # Update axes labels
-        fig.update_xaxes(title_text="Growth Rate", row=row, col=col)
+        fig.update_xaxes(title_text="FCF Growth Rate", row=row, col=col)
         fig.update_yaxes(title_text="Density", row=row, col=col)
     
     fig.update_layout(
-        title="FCF Growth Rate Distribution Previews",
+        title="FCF (Free Cash Flow) Growth Rate Distribution Previews",
         height=500 * rows,  # Increased from 300 to 500 for larger graphs
         template="plotly_white",
         showlegend=False,

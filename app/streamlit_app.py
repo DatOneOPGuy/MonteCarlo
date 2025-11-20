@@ -22,7 +22,7 @@ import pandas as pd
 import streamlit as st
 
 from app.core.analytics import compute_analytics
-from app.core.dcf import dcf_valuation_from_results, calculate_equity_value
+from app.core.dcf import dcf_valuation_from_results
 from app.core.simulate import simulate_growth_paths, simulate_with_lhs
 from app.core.types import SimConfig
 from app.core.validation import compute_parameter_hash
@@ -121,7 +121,7 @@ def main() -> None:
     # Show Apple preset info if enabled
     if apple_preset and dcf_mode:
         st.info(
-            "🍎 **Apple Project Preset Active**: Using FY2025 FCF ($105.0B), WACC (8.21%), "
+            "🍎 **Apple Project Preset Active**: Using FY2025 FCF ($107.509B), WACC (8.21%), "
             "and triangular growth distributions for Year 1 & Year 2."
         )
 
@@ -140,7 +140,7 @@ def main() -> None:
         
         # Apple preset values
         if apple_preset:
-            preset_fcf = 105.0  # FY2025 FCF in billions
+            preset_fcf = 107.509  # FY2025 FCF in billions
             preset_wacc = 0.0821  # 8.21%
             preset_terminal = 0.03  # 3%
         else:
@@ -203,33 +203,7 @@ def main() -> None:
         if market_cap == 0:
             market_cap = None
 
-        # Equity value calculation (optional, hidden by default)
-        calculate_equity = False  # Disabled - focus on Enterprise Value only
-        # Uncomment below if you want to enable per-share calculations
-        # st.sidebar.subheader("Equity Value (Optional)")
-        # calculate_equity = st.sidebar.checkbox("Calculate Equity Value per Share", value=False)
-        if False:  # calculate_equity:
-            cash = st.sidebar.number_input(
-                "Cash & Equivalents",
-                value=0.0,
-                step=1_000_000_000.0,
-                format="%.0f",
-            )
-            debt = st.sidebar.number_input(
-                "Total Debt",
-                value=0.0,
-                step=1_000_000_000.0,
-                format="%.0f",
-            )
-            shares = st.sidebar.number_input(
-                "Shares Outstanding",
-                min_value=0.0,
-                value=1.0,
-                step=0.1,
-                format="%.2f",
-            )
-        else:
-            cash = debt = shares = 0.0
+        # Enterprise Value only - no per-share calculations
 
     # Simulation controls
     n_sims, seed, use_lhs = render_simulation_controls()
@@ -237,11 +211,28 @@ def main() -> None:
     # Scenario controls
     scenario_name, scenario_weight = render_scenario_controls()
 
-    # Correlation - auto-enable with 0.6 for Apple preset
-    if apple_preset and dcf_mode and n_years >= 2:
-        # Pre-set correlation for Apple preset
-        st.sidebar.info("🍎 **Apple Preset**: Correlation automatically enabled (Year 1 ↔ Year 2 = 0.6)")
-    correlation = render_correlation_controls(n_years, apple_preset=apple_preset and dcf_mode)
+    # Correlation - show in sidebar
+    st.sidebar.subheader("Correlation")
+    if n_years >= 2:
+        # Year 1 ↔ Year 2 correlation coefficient input
+        default_corr = 0.6 if (apple_preset and dcf_mode) else 0.6
+        year1_year2_corr = st.sidebar.number_input(
+            "Correlation Coefficient (Year 1 ↔ Year 2)",
+            min_value=-1.0,
+            max_value=1.0,
+            value=default_corr,
+            step=0.05,
+            format="%.2f",
+            key="year1_year2_corr_sidebar",
+            help="Correlation between Year 1 and Year 2 FCF growth rates (default: 0.6)",
+        )
+        if apple_preset and dcf_mode:
+            st.sidebar.caption("🍎 Apple Preset: Using 0.6 correlation coefficient")
+    else:
+        year1_year2_corr = None
+    
+    # Full correlation controls (for matrix if needed)
+    correlation = render_correlation_controls(n_years, apple_preset=apple_preset and dcf_mode, year1_year2_corr=year1_year2_corr if n_years >= 2 else None)
 
     # Build year configurations
     st.sidebar.subheader("Year Configurations")
@@ -260,7 +251,7 @@ def main() -> None:
                     with col_c:
                         st.metric("Mode (c)", "0.08", help="Most likely: 8% growth")
                     with col_b:
-                        st.metric("Max (b)", "0.34", help="Upper bound: 34% growth")
+                        st.metric("Max (b)", "0.34", help="Upper bound: 30% growth")
                     
                     dist_config = {
                         "type": "triangular",
@@ -278,7 +269,7 @@ def main() -> None:
                     with col_c:
                         st.metric("Mode (c)", "0.15", help="Most likely: 15% growth")
                     with col_b:
-                        st.metric("Max (b)", "0.41", help="Upper bound: 41% growth")
+                        st.metric("Max (b)", "0.41", help="Upper bound: 43% growth")
                     
                     dist_config = {
                         "type": "triangular",
@@ -369,10 +360,6 @@ def main() -> None:
                     st.session_state["terminal_growth"] = terminal_growth
                     st.session_state["terminal_multiple"] = terminal_multiple
                     st.session_state["market_cap"] = market_cap
-                    st.session_state["calculate_equity"] = calculate_equity
-                    st.session_state["cash"] = cash
-                    st.session_state["debt"] = debt
-                    st.session_state["shares"] = shares
                     st.session_state["apple_preset"] = apple_preset
                 st.success("✅ Simulation completed!")
 
@@ -391,15 +378,11 @@ def main() -> None:
         dcf_mode_active = st.session_state.get("dcf_mode", dcf_mode)
         
         # Initialize DCF variables with defaults
-        initial_fcf = st.session_state.get("initial_fcf", 105.0)  # Billions
+        initial_fcf = st.session_state.get("initial_fcf", 107.509)  # Billions
         wacc = st.session_state.get("wacc", 0.0821)
         terminal_growth = st.session_state.get("terminal_growth", None)
         terminal_multiple = st.session_state.get("terminal_multiple", None)
         market_cap = st.session_state.get("market_cap", None)
-        calculate_equity = st.session_state.get("calculate_equity", False)
-        cash = st.session_state.get("cash", 0.0)
-        debt = st.session_state.get("debt", 0.0)
-        shares = st.session_state.get("shares", 0.0)
         apple_preset_used = st.session_state.get("apple_preset", False)
 
         # DCF valuation if enabled
@@ -415,19 +398,7 @@ def main() -> None:
                 fcf_in_billions=True,  # All values in billions
             )
 
-            # Calculate equity value if requested
-            if calculate_equity and shares > 0:
-                equity_values = np.array([
-                    calculate_equity_value(dcf_val, cash, debt, shares)
-                    for dcf_val in dcf_values
-                ])
-                equity_mean = np.mean(equity_values)
-                equity_median = np.median(equity_values)
-                equity_p05 = np.percentile(equity_values, 5)
-                equity_p95 = np.percentile(equity_values, 95)
-            else:
-                equity_values = None
-                equity_mean = equity_median = equity_p05 = equity_p95 = None
+            # Enterprise Value only - no equity/per-share calculations
 
             # Display DCF results - Enterprise Value is the primary output
             st.header("📊 DCF Valuation Results")
@@ -494,19 +465,6 @@ def main() -> None:
                 else:
                     st.warning(f"⚠ Model suggests **OVERVALUED** by ${abs(diff):.2f}B ({abs(pct_diff):.2f}%)")
 
-            # Equity Value per Share section removed - focus on Enterprise Value only
-            # Uncomment below if you want to show per-share calculations
-            # if calculate_equity and equity_values is not None:
-            #     st.subheader("Equity Value per Share")
-            #     eq_col1, eq_col2, eq_col3, eq_col4 = st.columns(4)
-            #     with eq_col1:
-            #         st.metric("Mean", f"${equity_mean:.2f}")
-            #     with eq_col2:
-            #         st.metric("Median", f"${equity_median:.2f}")
-            #     with eq_col3:
-            #         st.metric("5th Percentile", f"${equity_p05:.2f}")
-            #     with eq_col4:
-            #         st.metric("95th Percentile", f"${equity_p95:.2f}")
 
             # Use DCF values for visualization
             analysis_array = dcf_values
@@ -600,24 +558,31 @@ def main() -> None:
         with tab1:
             # Always show Year 1 and Year 2 growth rate distributions if available
             if results.paths.shape[1] >= 2:
-                st.subheader("Growth Rate Distributions")
+                st.subheader("FCF Growth Rate Distributions (Input)")
+                st.caption(
+                    "These distributions represent the uncertainty in Free Cash Flow growth rates for each year. "
+                    "**Density** on the y-axis shows the relative likelihood of different growth rate values - "
+                    "higher density means that range of values is more likely to occur."
+                )
                 growth_col1, growth_col2 = st.columns(2)
                 
                 with growth_col1:
-                    st.markdown("**Year 1 Growth Rate**")
+                    st.markdown("**Year 1 FCF Growth Rate Distribution**")
+                    year1_data = results.paths[:, 0]
                     fig_g1 = plot_distribution_histogram(
-                        results.paths[:, 0],
-                        title="Year 1 Growth Rate Distribution",
+                        year1_data,
+                        title="Year 1 FCF Growth Rate Distribution",
                     )
-                    st.plotly_chart(fig_g1, use_container_width=True)
+                    st.plotly_chart(fig_g1, use_container_width=True, key="year1_growth_chart")
                 
                 with growth_col2:
-                    st.markdown("**Year 2 Growth Rate**")
+                    st.markdown("**Year 2 FCF Growth Rate Distribution**")
+                    year2_data = results.paths[:, 1]
                     fig_g2 = plot_distribution_histogram(
-                        results.paths[:, 1],
-                        title="Year 2 Growth Rate Distribution",
+                        year2_data,
+                        title="Year 2 FCF Growth Rate Distribution",
                     )
-                    st.plotly_chart(fig_g2, use_container_width=True)
+                    st.plotly_chart(fig_g2, use_container_width=True, key="year2_growth_chart")
                 
                 st.markdown("---")
             
@@ -629,10 +594,10 @@ def main() -> None:
             else:
                 if results.paths.shape[1] == 1:
                     plot_data = results.paths[:, 0]
-                    title = "Growth Rate Distribution"
+                    title = "FCF Growth Rate Distribution"
                 else:
                     plot_data = results.paths[:, -1]
-                    title = "Final Year Growth Rate Distribution"
+                    title = "Final Year FCF Growth Rate Distribution"
 
             fig = plot_distribution_histogram(plot_data, title=title)
             st.plotly_chart(fig, use_container_width=True)
@@ -711,7 +676,11 @@ def main() -> None:
         with tab6:
             st.header("📋 FCF Growth Rate Distributions")
             st.markdown(
-                "**Visualization of what each year's growth rate distribution looks like based on your configured parameters.**"
+                "**Visualization of what each year's Free Cash Flow (FCF) growth rate distribution looks like based on your configured parameters.**"
+            )
+            st.caption(
+                "These previews show the shape and characteristics of the FCF growth rate distributions you've configured. "
+                "Each distribution represents the uncertainty in how much Free Cash Flow will grow in that year."
             )
             try:
                 preview_fig = plot_distribution_preview(year_configs, n_preview_samples=10_000, seed=42)
@@ -757,9 +726,6 @@ def main() -> None:
                     **{f"Year {i+1} Growth Rate": results.paths[:, i] for i in range(results.paths.shape[1])},
                     "Enterprise Value (Billions USD)": dcf_values,
                 })
-                # Per-share values removed - focus on Enterprise Value
-                # if equity_values is not None:
-                #     df["Equity Value per Share"] = equity_values
             else:
                 df = pd.DataFrame(results.paths, columns=[f"Year {i+1}" for i in range(results.paths.shape[1])])
             csv = df.to_csv(index=False)

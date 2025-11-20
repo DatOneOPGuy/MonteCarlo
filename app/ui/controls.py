@@ -261,7 +261,7 @@ def render_distribution_selector(year: int, default_type: str = "normal") -> Dis
     return dist_config
 
 
-def render_correlation_controls(n_years: int, apple_preset: bool = False) -> CorrelationConfig:
+def render_correlation_controls(n_years: int, apple_preset: bool = False, year1_year2_corr: float | None = None) -> CorrelationConfig:
     """Render correlation matrix input controls."""
     # Auto-enable correlation for Apple preset
     default_enabled = apple_preset and n_years >= 2
@@ -274,9 +274,8 @@ def render_correlation_controls(n_years: int, apple_preset: bool = False) -> Cor
     if not enabled:
         return CorrelationConfig(matrix=np.eye(n_years), enabled=False)
 
-    # Special handling for Year 1 ↔ Year 2 correlation when n_years >= 2
-    year1_year2_corr = None
-    if n_years >= 2:
+    # Use provided correlation value if available, otherwise show input
+    if year1_year2_corr is None and n_years >= 2:
         st.markdown("**Year 1 ↔ Year 2 Correlation**")
         # Use 0.6 as default for Apple preset, otherwise 0.6
         default_corr = 0.6 if apple_preset else 0.6

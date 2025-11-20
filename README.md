@@ -30,13 +30,19 @@ The API will be available at `http://localhost:8000` with interactive docs at `h
 
 ### Run the UI
 
-In a separate terminal, start the Streamlit dashboard:
+This repository includes two Streamlit applications:
 
+**1. General Monte Carlo Toolkit UI:**
 ```bash
 streamlit run ui/streamlit_app.py
 ```
 
-The UI will open in your browser with interactive controls and visualizations.
+**2. DCF Valuation Application (Advanced):**
+```bash
+streamlit run app/streamlit_app.py
+```
+
+Both UIs will open in your browser with interactive controls and visualizations. The DCF application provides specialized features for financial valuation modeling.
 
 ### CLI Examples
 
@@ -83,31 +89,73 @@ python -m montecarlo.cli linear --mu1 10 --sigma1 2 --mu2 1 --sigma2 0.25 --n 20
 
 ## Project Structure
 
+This repository contains two main components:
+
+### 1. Core Monte Carlo Toolkit
+A general-purpose Monte Carlo simulation library with API, CLI, and basic UI.
+
+### 2. DCF Valuation Application
+A specialized Streamlit application for DCF (Discounted Cash Flow) valuation with advanced Monte Carlo simulation.
+
 ```
 montecarlo/
-├── src/montecarlo/
+├── src/montecarlo/          # Core Monte Carlo library
 │   ├── __init__.py
 │   ├── core.py              # Simulation engine
 │   ├── distributions.py     # Distribution samplers
 │   ├── cli.py               # Command-line interface
 │   ├── api.py               # FastAPI REST API
 │   └── viz.py               # Plotly visualization helpers
-├── ui/
-│   ├── streamlit_app.py     # Streamlit dashboard
+├── ui/                      # General Monte Carlo UI
+│   ├── streamlit_app.py     # Basic Streamlit dashboard
 │   └── assets/
 │       └── logo.svg
-├── examples/
-│   ├── estimate_pi.py       # π estimation example
-│   └── portfolio_risk.py    # Portfolio risk analysis
-├── notebooks/
-│   └── intro_monte_carlo.ipynb  # Tutorial notebook
-├── tests/
+├── app/                     # DCF Valuation Application
+│   ├── streamlit_app.py     # DCF-focused Streamlit app
+│   ├── core/                # DCF simulation engine
+│   │   ├── types.py
+│   │   ├── distributions.py
+│   │   ├── simulate.py
+│   │   ├── analytics.py
+│   │   ├── dcf.py
+│   │   └── validation.py
+│   ├── ui/                  # DCF UI components
+│   │   ├── controls.py
+│   │   └── plots.py
+│   └── tests/               # DCF application tests
+├── examples/                # Example scripts
+│   ├── estimate_pi.py
+│   ├── portfolio_risk.py
+│   └── test_triangular.py
+├── notebooks/               # Jupyter notebooks
+│   └── intro_monte_carlo.ipynb
+├── tests/                   # Core library tests
 │   ├── test_core.py
 │   ├── test_distributions.py
 │   └── test_api.py
+├── docs/                    # Documentation
+│   ├── assets/              # Images and diagrams
+│   ├── APPLE_PROJECT_GUIDE.md
+│   ├── DCF_CODE_GUIDE.md
+│   └── ... (other docs)
+├── data/                    # Output data files (gitignored)
 ├── pyproject.toml
 └── README.md
 ```
+
+### Running the Applications
+
+**Core Monte Carlo Toolkit UI:**
+```bash
+streamlit run ui/streamlit_app.py
+```
+
+**DCF Valuation Application:**
+```bash
+streamlit run app/streamlit_app.py
+```
+
+For more details on the DCF application, see `docs/README.md` (moved from `app/README.md`).
 
 ## Usage
 
